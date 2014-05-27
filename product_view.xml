@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<openerp>
+    <data>
+	
+        <record id="mrp_product_form_view" model="ir.ui.view">
+            <field name="name">mrp.product.form</field>
+            <field name="model">product.product</field>
+			<field name="inherit_id" ref="product.product_normal_form_view"/>
+            <field name="arch" type="xml">
+			    <xpath expr="//page[@string='Sales']" position="after">
+				  <page string="Fabrication" >
+					<group name="Fabrication">
+                        <group>
+                            <field name="lot_mini"/>
+							<field name="multiple"/>
+                        </group>
+                        <group>           
+                            <field name="delai_fabrication"/>                
+							<field name="temps_realisation"/>
+                       </group>
+                    </group>
+				  </page>
+				</xpath>
+            </field>
+        </record>
+
+    </data>
+</openerp>
+

@@ -1,0 +1,90 @@
+<?xml version="1.0"?>
+<openerp>
+    <data>
+	
+		<!-- tree prevision -->
+        <record id="mrp_prevision_tree" model="ir.ui.view">
+            <field name="name">mrp.prevision.tree</field>
+            <field name="model">mrp.prevision</field>
+			<field name="arch" type="xml">
+                <tree string="Prevision">
+                    <field name="name"/>
+                    <field name="product_id" />
+                    <field name="quantity" />
+					<field name="start_date" />
+					<field name="end_date" />
+					<field name="type"/>
+					<field name="niveau" />
+                </tree>
+            </field>
+        </record>
+		
+		<!-- form prevision -->
+		<record id="mrp_prevision_form" model="ir.ui.view">
+            <field name="name">mrp.prevision.form</field>
+            <field name="model">mrp.prevision</field>
+            <field name="arch" type="xml">
+                <form string="Prevision" version="7.0">
+                    <label for="name" class="oe_edit_only"/>
+                    <h1><field name="name"/></h1>
+                    <group name="Prevision">
+						<group>
+                            <field name="type" />
+                        </group>
+                        <group>
+                            <field name="product_id" />
+                            <field name="quantity" />
+                        </group>
+                        <group>
+                            <field name="start_date" />
+                            <field name="end_date" />
+							<field name="niveau" />
+                        </group>
+						<group>
+                            <field name="note" />
+							<field name="company_id" widget="selection" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                </form>
+           </field>
+        </record>
+		
+		<record id="mrp_prevision_search_view" model="ir.ui.view">
+            <field name="name">mrp.prevision.search</field>
+            <field name="model">mrp.prevision</field>
+            <field name="arch" type="xml">
+                <search string="Prevision">
+                    <filter string="Inactive" icon="terp-gdu-smart-failing" domain="[('active','=',False)]"/>
+					<field name="name"/>
+                    <field name="product_id"/>
+					<field name="start_date"/>
+					<field name="end_date"/>
+					<field name="type"/>
+					<field name="niveau"/>
+                    <field name="company_id" groups="base.group_multi_company"/>
+                </search>
+            </field>
+        </record>
+		
+		
+		<!-- action de la fenetre -->
+		<record id="action_mrp_prevision_form" model="ir.actions.act_window">
+            <field name="name">Prevision</field>
+            <field name="type">ir.actions.act_window</field>
+            <field name="res_model">mrp.prevision</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">tree,form</field>
+            <field name="view_id" ref="mrp_prevision_tree"/>
+			<field name="search_view_id" ref="mrp_prevision_search_view"/>
+        </record>
+		
+		<menuitem name="Previsions"
+            id="menu_mrp_prevision"
+            parent="base.menu_mrp_root"
+            sequence="1"/>
+		
+		<menuitem action="action_mrp_prevision_form" id="menu_action_mrp_prevision_form" parent="menu_mrp_prevision"/>
+
+    </data>
+</openerp>
+
