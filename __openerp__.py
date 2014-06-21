@@ -1,21 +1,15 @@
 # -*- coding: utf-8 -*-
-##############################################################################
-#
-#    OpenERP, Open Source Management Solution
-#    Copyright (C) 2004-2010 Tiny SPRL (<http://tiny.be>).
-#
-#    Asma BOUSSELMI - CONSULTANT OPENERP CONFIRME
-#
-##############################################################################
 
 {
     'name': 'MRP Secteur automobile',
     'version': '1.0',
-    'category': 'Manufacturing',
+    'category': 'InfoSaône',
     'description': """
 MRP pour le secteur automobile
     """,
-    'author': 'Asma BOUSSELMI',
+    'author': 'Tony GALMICHE / Asma BOUSSELMI',
+    'maintainer': 'InfoSaône',
+    'website': 'http://www.infosaone.com',
     'depends': ['product','mrp', 'mrp_byproduct', 'is_automobile_contract'],
     'data': [
         'product_view.xml',
