@@ -7,8 +7,6 @@ from openerp.osv import fields, osv
 from openerp.tools.translate import _
 from openerp import netsvc
 
-limit = 100000000000000000000
-
 class mrp_generate_previsions(osv.osv_memory):
 
     _name = "mrp.previsions.generate"
@@ -214,7 +212,8 @@ class mrp_generate_previsions(osv.osv_memory):
                        "WHERE purchase.state NOT IN ('done', 'cancel') " \
                        "AND line.date_planned = %s AND line.product_id = %s", (date, product,))
         qty_cmd = cr.fetchone()
-
+        if date == time.strftime('%Y-%m-%d') and product == 57:
+            print 'result ********', qty_cmd
         if qty_cmd[0] is None:
             return 0
         else:
@@ -272,33 +271,37 @@ class mrp_generate_previsions(osv.osv_memory):
 
         prevision = prevision_obj.create(cr, uid, prevision_values, context=context)
         return prevision
-
+    
     #Déterminer le premier niveau de la nomenclature d'un produit
     def get_product_boms(self, cr, uid, product, context=None):
         boms = []
         bom_obj = self.pool.get('mrp.bom')
-
-        bom_ids = bom_obj.search(cr, uid, [('product_id','=',product.id),], context=context)
-        if bom_ids:
-            for line in bom_obj.browse(cr, uid, bom_ids[0], context=context).bom_lines:
-                boms.append(line.id)
-
+        
+        template_id = product.product_tmpl_id and product.product_tmpl_id.id or False
+        if template_id:
+            bom_ids = bom_obj.search(cr, uid, [('product_tmpl_id','=',template_id),], context=context)
+            if bom_ids:
+                for line in bom_obj.browse(cr, uid, bom_ids[0], context=context).bom_line_ids:
+                    boms.append(line.id)
         return boms
 
     #Vérifier si un produit a une nomenclature ou non
     def product_nomenclature(self, cr, uid, product, context=None):
         bom_obj = self.pool.get('mrp.bom')
-
-        bom_ids = bom_obj.search(cr, uid, [('product_id','=',product),], context=context)
-        if bom_ids:
-            if bom_obj.browse(cr, uid, bom_ids[0], context=context).bom_lines :
-                return True
+        
+        product = self.pool.get('product.product').read(cr, uid, product, ['product_tmpl_id'], context=context)
+        template_id = product['product_tmpl_id'] and product['product_tmpl_id'][0] or False
+        if template_id:
+            bom_ids = bom_obj.search(cr, uid, [('product_tmpl_id','=',template_id),], context=context)
+            if bom_ids:
+                if bom_obj.browse(cr, uid, bom_ids[0], context=context).bom_line_ids :
+                    return True
         return False
                     
 
     def generate_previsions(self, cr, uid, ids, context=None):
         prevision_obj = self.pool.get('mrp.prevision')
-        bom_obj = self.pool.get('mrp.bom')
+        bom_line_obj = self.pool.get('mrp.bom.line')
         
         result = []
         
@@ -309,7 +312,6 @@ class mrp_generate_previsions(osv.osv_memory):
         if data:
             #Chercher les dates entre la date d'aujourd'hui et la date max
             dates = self.list_dates_availables(cr, uid, data['max_date'], context=context)
-            
             #supprimer les previsions de type "suggestion de fabrication" existantes
             prevision_ids = prevision_obj.search(cr, uid, [('active','=',True),], context=context)
             prevision_obj.unlink(cr, uid, prevision_ids, context=context)
@@ -321,7 +323,6 @@ class mrp_generate_previsions(osv.osv_memory):
                 #Créer des FS pour les produits ayant des commandes et des Ordres de fabrication si le niveau = 0
                 #Créer des FS pour les produits ayant des prévision de type Besoin suggéré si le niveau > 1
                 lst_products = self.list_products_availables(cr, uid, niveau, context=context)
-                
                 if lst_products:
                     res_fs = []
                     for product in lst_products:
@@ -463,10 +464,9 @@ class mrp_generate_previsions(osv.osv_memory):
                         niveau += 1
                         res_ft = []
                         for prevision in prevision_obj.browse(cr, uid, res_fs, context=context):
-                            boms = []
                             bom_ids = self.get_product_boms(cr, uid, prevision.product_id, context=context)
                             if bom_ids:
-                                for bom in bom_obj.browse(cr, uid, bom_ids, context=context):
+                                for bom in bom_line_obj.browse(cr, uid, bom_ids, context=context):
                                     qty = prevision.quantity * bom.product_qty
                                     note = 'Prevision: ' + str(prevision.name) + '\n' + 'Produit: ' + str(prevision.product_id.default_code)
                                     prev_bes_sug_id = self.create_prevision(cr, uid, bom.product_id.id, qty, prevision.start_date, prevision.end_date, 'besoin_sug', niveau, 0, note, context=context)
