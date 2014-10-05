@@ -299,6 +299,8 @@ class mrp_generate_previsions(osv.osv_memory):
         return False
                     
 
+
+
     def generate_previsions(self, cr, uid, ids, context=None):
         prevision_obj = self.pool.get('mrp.prevision')
         bom_line_obj = self.pool.get('mrp.bom.line')

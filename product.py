@@ -10,7 +10,7 @@ class product_product(osv.osv):
     _inherit = 'product.product'
 
     _columns = {
-        'lot_mini': fields.float('Lot Mini'),
+        'lot_mini': fields.float("Lot d'appro."),
         'multiple': fields.float('Multiple de'),
         'delai_fabrication': fields.integer('Delai de fabrication minimum en jours'),
         'temps_realisation': fields.float('Temps de realisation en secondes'),
