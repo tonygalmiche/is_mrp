@@ -8,6 +8,7 @@
             <field name="arch" type="xml">
                 <form string="Generer les previsions" version="7.0">
                     <group>
+                    	<field name="company_id" />
 					    <field name="max_date" />
                     </group>
                     <footer>

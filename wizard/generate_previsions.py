@@ -13,6 +13,11 @@ class mrp_generate_previsions(osv.osv_memory):
     _description = "Generate previsions"
     _columns = {
         'max_date': fields.date('Date Max', required=True),
+        'company_id': fields.many2one('res.company', 'Company', required=True),
+    }
+    
+    _defaults = {
+        'company_id': lambda s, cr, uid, c: s.pool.get('res.company')._company_default_get(cr, uid, 'mrp.previsions.generate', context=c),
     }
 
     def _check_date_max(self, cr, uid, ids, context=None):
@@ -22,7 +27,7 @@ class mrp_generate_previsions(osv.osv_memory):
         return True
 
     _constraints = [
-        (_check_date_max, 'La date max doit etre superieure a la date de jours', ['max_date']),
+        (_check_date_max, u'La date max doit être supérieure à la date de jour', ['max_date']),
     ]
 
 
@@ -71,7 +76,7 @@ class mrp_generate_previsions(osv.osv_memory):
 
         else: #Chercher dans les prévision besoin suggéré de niveau adéquat
             prevision_obj = self.pool.get('mrp.prevision')
-            prevision_ids = prevision_obj.search(cr, uid, [('type','=','besoin_sug'),('niveau','=',niveau),], context=context)
+            prevision_ids = prevision_obj.search(cr, uid, [('type','=','ft'),('niveau','=',niveau),], context=context)
             if prevision_ids:
                 for prev in prevision_obj.browse(cr, uid, prevision_ids, context=context):
                     if prev.product_id not in lst_products:
@@ -143,10 +148,10 @@ class mrp_generate_previsions(osv.osv_memory):
     def sum_qty_besoin_sugg(self, cr, uid, date, product, niveau, context=None):
         if date == time.strftime('%Y-%m-%d'):
             cr.execute("SELECT SUM(quantity) FROM mrp_prevision " \
-                   "WHERE type = 'besoin_sug' AND start_date <= %s AND product_id = %s AND niveau = %s", (date, product, niveau,))
+                   "WHERE type = 'ft' AND start_date <= %s AND product_id = %s AND niveau = %s", (date, product, niveau,))
         else:
             cr.execute("SELECT SUM(quantity) FROM mrp_prevision " \
-                   "WHERE type = 'besoin_sug' AND start_date = %s AND product_id = %s AND niveau = %s", (date, product, niveau))
+                   "WHERE type = 'ft' AND start_date = %s AND product_id = %s AND niveau = %s", (date, product, niveau))
         qty_ft = cr.fetchone()
 
         if qty_ft[0] is None:
@@ -171,15 +176,15 @@ class mrp_generate_previsions(osv.osv_memory):
         
         cr.execute('SELECT MAX(inv.id) FROM stock_inventory inv ' \
                    'JOIN stock_inventory_line inv_line ON inv.id = inv_line.inventory_id ' \
-                   'WHERE inv_line.product_id = %s ', (product, ))
+                   'WHERE inv_line.product_id = %s ', (product.id, ))
         last_inventory = cr.fetchone()
                                 
-        inventory_ids = inventory_obj.search(cr, uid, [('product_id','=',product), ('inventory_id','=',last_inventory[0])], context=context)
-        qty_stock = 0
+        inventory_ids = inventory_obj.search(cr, uid, [('product_id','=',product.id), ('inventory_id','=',last_inventory[0])], context=context)
+        qty_stock = - product.is_stock_secu
         if inventory_ids:
             for inv in inventory_obj.browse(cr, uid, inventory_ids, context=context):
                     qty_stock += inv.product_qty
-
+                    
         return qty_stock
         
     #Calculer le stock theorique 
@@ -190,38 +195,53 @@ class mrp_generate_previsions(osv.osv_memory):
     #Calculer la quantité de la prévision en fonction de lot mini et multiple de
     def calcul_prevision_qty(self, cr, uid, stock_th, product, context=None):
         if -(stock_th) <= product.lot_mini:
-            return product.lot_mini
+            prev_qty = product.lot_mini + (product.lot_mini * product.is_perte / 100)
+            return prev_qty
         else: # la valeur absolu de stock_th est superieure au lot_mini
             qty1 = -(stock_th) - product.lot_mini
             qty2 = qty1 / product.multiple
             if int(qty2) < qty2:
                 qty2 = int(qty2) + 1
-            return product.lot_mini + (qty2 * product.multiple)
+            qty = product.lot_mini + (qty2 * product.multiple)
+            prev_qty = qty + (qty * product.is_perte / 100)
+            return prev_qty
 
 
     #Calculer la somme des quantités des commandes
     def sum_qty_cmd_four(self, cr, uid, date, product, context=None):
+        purchase_line_obj = self.pool.get('purchase.order.line')
+        stock_move_obj = self.pool.get('stock.move')
+        
         if date == time.strftime('%Y-%m-%d'):
-            cr.execute("SELECT SUM(product_qty) FROM purchase_order_line line " \
-                   "JOIN purchase_order purchase ON line.order_id = purchase.id " \
-                   "WHERE purchase.state NOT IN ('done', 'cancel') " \
-                   "AND line.date_planned <= %s AND line.product_id = %s", (date, product,))
+            line_ids = purchase_line_obj.search(cr, uid, [('state','not in',('done', 'cancel')), ('date_planned','<=', date), ('product_id','=',product)])
         else:
-            cr.execute("SELECT SUM(product_qty) FROM purchase_order_line line " \
-                       "JOIN purchase_order purchase ON line.order_id = purchase.id " \
-                       "WHERE purchase.state NOT IN ('done', 'cancel') " \
-                       "AND line.date_planned = %s AND line.product_id = %s", (date, product,))
-        qty_cmd = cr.fetchone()
-        if date == time.strftime('%Y-%m-%d') and product == 57:
-            print 'result ********', qty_cmd
-        if qty_cmd[0] is None:
-            return 0
-        else:
-            return qty_cmd[0]
+            line_ids = purchase_line_obj.search(cr, uid, [('state','not in',('done', 'cancel')), ('date_planned','=', date), ('product_id','=',product)])
+        
+        qty = 0
+        if line_ids:
+            draft_line_ids = purchase_line_obj.search(cr, uid, [('id','in', line_ids), ('state','=', 'draft')], context=context)
+            if draft_line_ids:
+                for line in purchase_line_obj.read(cr, uid, draft_line_ids, ['product_qty'], context=context):
+                    qty += line['product_qty']
+            
+            confirm_line_ids = purchase_line_obj.search(cr, uid, [('id','in', line_ids), ('state','!=', 'draft')], context=context)
+            if confirm_line_ids:
+                for line_id in confirm_line_ids:
+                    recept_line_ids = stock_move_obj.search(cr, uid, [('purchase_line_id','=',line_id)], context=context)
+                    line = purchase_line_obj.read(cr, uid, line_id, ['product_qty'], context=context)
+                    product_qty = line['product_qty']
+                    if recept_line_ids:
+                        for recept_line in stock_move_obj.read(cr, uid, recept_line_ids, ['product_uom_qty', 'state'], context=context):
+                            if recept_line['state'] == 'done':
+                                product_qty -= recept_line['product_uom_qty']
+                            else:
+                                continue
+                    qty += product_qty
+        return qty
 
     def prevision_fournisseur(self, cr, uid, product, context=None):
         cr.execute("SELECT MAX(id) FROM mrp_prevision " \
-                   "WHERE type = 'sug_cmd_four' AND product_id = %s ", (product,))
+                   "WHERE type = 'sa' AND product_id = %s ", (product,))
         prevision_id = cr.fetchone()
         if prevision_id[0] is None:
             return False
@@ -231,7 +251,7 @@ class mrp_generate_previsions(osv.osv_memory):
     #Retourner Vrai s'il faut créer une prévision fournisseur
     def create_prevision_sug_cmd_four(self, cr, uid, product, date, stock_four, context=None):
         cr.execute("SELECT MAX(id) FROM mrp_prevision " \
-                   "WHERE type = 'sug_cmd_four' AND product_id = %s ", (product,))
+                   "WHERE type = 'sa' AND product_id = %s ", (product,))
         prevision_id = cr.fetchone()
         if prevision_id[0] is None:
             return True
@@ -244,21 +264,71 @@ class mrp_generate_previsions(osv.osv_memory):
                 return True
 
     #Calculer la date debut de la prevision
-    def calcul_date_prevision(self, cr, uid, date, quantity, product, context=None):
+    def calcul_date_prevision(self, cr, uid, date, quantity, product, type, company, context=None):
         time_production = quantity * product.temps_realisation
         start_date = datetime.datetime.strptime(date, '%Y-%m-%d') - datetime.timedelta(days=product.delai_fabrication) - datetime.timedelta(seconds=time_production)
         start_time = start_date.strftime('%H:%M:%S')
         if start_time > '01:00:00':
             start_date = datetime.datetime.strptime(date, '%Y-%m-%d') - datetime.timedelta(days=(product.delai_fabrication + 1)) - datetime.timedelta(seconds=time_production)
         start_date = start_date.strftime('%Y-%m-%d')
+        
+        partner = False
+        if type == 'fs':
+            partner = company
+                    
+        if type == 'sa':
+            if product.seller_ids:
+                partner = product.seller_ids[0].name
+        start_date = self.format_start_date(cr, uid, start_date, partner, context)       
+        
         return start_date
+    
+    # déterminer la date de début en prenant en considération les jours de fermetures de l'usine et de fournisseur
+    def format_start_date(self, cr, uid, date, partner, context=None):
+        is_api = self.pool.get('is.api')
+        if partner:
+            # jours de fermeture de la société
+            jours_fermes = is_api.num_closing_days(cr, uid, partner, context=context)
+            # Jours de congé de la société
+            leave_dates = is_api.get_leave_dates(cr, uid, partner, context=context)
 
+            num_day = time.strftime('%w', time.strptime(date, '%Y-%m-%d'))
+            date = is_api.get_working_day(cr, uid, date, num_day, jours_fermes, leave_dates, context=context)
+        return date
 
+    def chiffre_texte(self, cr, uid, num_od, context=None):
+        if len(num_od) == 1:
+            return '0000'
+        elif len(num_od) == 2:
+            return '000'
+        elif len(num_od) == 3:
+            return '00'
+        elif len(num_od) == 4:
+            return '0'
+        else:
+            return ''
+    # structurer le nom de la prévision
+    def formater_nom_prevision(self, cr, uid, type, num_od, context=None):
+        part = self.chiffre_texte(cr, uid, str(num_od), context) + str(num_od)
+        if type == 'fs':
+            return 'FS-' + part
+        elif type == 'ft':
+            return 'FT-' + part
+        else:
+            return 'SA-' + part
+        
     #Créer une prévision
-    def create_prevision(self, cr, uid, product, quantity, start_date, end_date, type, niveau, stock_th, note, context=None):
+    def create_prevision(self, cr, uid, product, quantity, start_date, end_date, type, niveau, stock_th, num_od_fs, num_od_sa, note, context=None):
         prevision_obj = self.pool.get('mrp.prevision')
+        if type in ('fs', 'ft'):
+            num_od = num_od_fs
+        if type == 'sa':
+            num_od = num_od_sa
+
+            
         prevision_values = {
-            'name': '/',
+            'num_od': num_od,
+            'name': self.formater_nom_prevision(cr, uid, type, num_od, context),
             'type': type,
             'product_id': product,
             'quantity': quantity,
@@ -299,21 +369,22 @@ class mrp_generate_previsions(osv.osv_memory):
         return False
                     
 
-
-
     def generate_previsions(self, cr, uid, ids, context=None):
         prevision_obj = self.pool.get('mrp.prevision')
         bom_line_obj = self.pool.get('mrp.bom.line')
+        company_obj = self.pool.get('res.company')
         
         result = []
         
         if context is None:
             context = {}
-        data = self.read(cr, uid, ids)[0]
+        data = self.read(cr, uid, ids)[0]        
+        company = company_obj.browse(cr, uid, data['company_id'][0], context=context)
 
         if data:
             #Chercher les dates entre la date d'aujourd'hui et la date max
             dates = self.list_dates_availables(cr, uid, data['max_date'], context=context)
+            print 'dates *******', dates
             #supprimer les previsions de type "suggestion de fabrication" existantes
             prevision_ids = prevision_obj.search(cr, uid, [('active','=',True),], context=context)
             prevision_obj.unlink(cr, uid, prevision_ids, context=context)
@@ -321,10 +392,14 @@ class mrp_generate_previsions(osv.osv_memory):
             niveau = 0
             lst_items = []
             
+            num_od_fs = 0
+            num_od_sa = 0
+                        
             while (niveau < 10):
                 #Créer des FS pour les produits ayant des commandes et des Ordres de fabrication si le niveau = 0
                 #Créer des FS pour les produits ayant des prévision de type Besoin suggéré si le niveau > 1
                 lst_products = self.list_products_availables(cr, uid, niveau, context=context)
+                print 'lst_products ******', lst_products
                 if lst_products:
                     res_fs = []
                     for product in lst_products:
@@ -341,7 +416,7 @@ class mrp_generate_previsions(osv.osv_memory):
                                     continue
                         if not lst_items or not exist_item:
                             lst_items.append({'product_id':product.id, 'stock_reel':0, 'date_max_ft': '', 'qty_four':0, 'niv_four':10, 'sum_stock_th':0, 'sum_qty_prev':0 })
-                                                            
+                        print 'lst_items******', lst_items                                    
                         for date in dates:
                             #Calculer la somme des quantités des commandes si niveau = 0
                             #Calculer la somme des quantités des prévisions besoin suggéré si niveau > 0
@@ -378,7 +453,7 @@ class mrp_generate_previsions(osv.osv_memory):
                             
                             #Calculer le stock theorique
                             if date == time.strftime('%Y-%m-%d'): #Première itération
-                                qty_stock = self.calcul_qty_stock_reel(cr, uid, product.id, context=context)
+                                qty_stock = self.calcul_qty_stock_reel(cr, uid, product, context=context)
                                 for item in lst_items:
                                     if item['product_id'] == product.id:
                                         if niveau == item['niv_four']:
@@ -416,9 +491,6 @@ class mrp_generate_previsions(osv.osv_memory):
                                 #Calculer la quantité de la prévision en fonction de lot mini et multiple de
                                 quantity = self.calcul_prevision_qty(cr, uid, stock_th, product, context=context)
                                 
-                                #Calculer la date debut de la prevision
-                                start_date = self.calcul_date_prevision(cr, uid, date, quantity, product, context=context)
-
                                 #Si il existe des prévisions qui peuvent satisfaire la quantité a créer, on ne crée pas une nouvelle prévision
                                 create_prev = True
                                 if not self.product_nomenclature(cr, uid, product.id, context=context):
@@ -434,12 +506,17 @@ class mrp_generate_previsions(osv.osv_memory):
                                         else:
                                             continue
 
-                                    type_prev = 'sug_cmd_four'
+                                    type_prev = 'sa'
+                                    num_od_sa += 1
                                 else:
-                                    type_prev = 'sug_fabrication'
+                                    type_prev = 'fs'
+                                    num_od_fs += 1
+                                    
+                                #Calculer la date debut de la prevision
+                                start_date = self.calcul_date_prevision(cr, uid, date, quantity, product, type_prev, company.partner_id, context=context)
 
                                 if create_prev:
-                                    prevision_id = self.create_prevision(cr, uid, product.id, quantity, start_date, date, type_prev, niveau, stock_th, '', context=context)
+                                    prevision_id = self.create_prevision(cr, uid, product.id, quantity, start_date, date, type_prev, niveau, stock_th, num_od_fs, num_od_sa, '', context=context)
                                     result.append(prevision_id)
                                     res_fs.append(prevision_id)
                                     prevision_init = prevision_obj.browse(cr, uid, prevision_id, context=context)
@@ -447,7 +524,7 @@ class mrp_generate_previsions(osv.osv_memory):
                                     prevision = prevision_init
                                     stock_theor = stock_th
                                     for elem in lst_items:
-                                        if elem['product_id'] == product.id and type_prev == 'sug_cmd_four':
+                                        if elem['product_id'] == product.id and type_prev == 'sa':
                                             elem['sum_stock_th'] += stock_th
                                             elem['sum_qty_prev'] += quantity
                                         else:
@@ -471,7 +548,7 @@ class mrp_generate_previsions(osv.osv_memory):
                                 for bom in bom_line_obj.browse(cr, uid, bom_ids, context=context):
                                     qty = prevision.quantity * bom.product_qty
                                     note = 'Prevision: ' + str(prevision.name) + '\n' + 'Produit: ' + str(prevision.product_id.default_code)
-                                    prev_bes_sug_id = self.create_prevision(cr, uid, bom.product_id.id, qty, prevision.start_date, prevision.end_date, 'besoin_sug', niveau, 0, note, context=context)
+                                    prev_bes_sug_id = self.create_prevision(cr, uid, bom.product_id.id, qty, prevision.start_date, prevision.end_date, 'ft', niveau, 0, prevision.num_od, num_od_sa, note, context=context)
                                     res_ft.append(prev_bes_sug_id)
                                     result.append(prev_bes_sug_id)
                         if not res_ft:
