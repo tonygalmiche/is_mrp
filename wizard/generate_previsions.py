@@ -89,22 +89,40 @@ class mrp_generate_previsions(osv.osv_memory):
 
     #Calculer la somme des quantités des commandes
     def sum_qty_cmd(self, cr, uid, date, product, context=None):
+        sale_obj = self.pool.get('sale.order')
+        sale_line_obj = self.pool.get('sale.order.line')
+        procurement_obj = self.pool.get('procurement.order')
+        stock_move_obj = self.pool.get('stock.move')
+        
         if date == time.strftime('%Y-%m-%d'):
-            cr.execute("SELECT SUM(product_uom_qty) FROM sale_order_line line " \
-                   "JOIN sale_order sale ON line.order_id = sale.id " \
-                   "WHERE sale.state NOT IN ('done', 'cancel') " \
-                   "AND sale.date_expedition <= %s AND line.product_id = %s", (date, product,))
+            sale_ids = sale_obj.search(cr, uid, [('date_expedition','<=', date)], context=context)
+            line_ids = sale_line_obj.search(cr, uid, [('state','not in',('done', 'cancel')), ('order_id','in', sale_ids), ('product_id','=',product)])
         else:
-            cr.execute("SELECT SUM(product_uom_qty) FROM sale_order_line line " \
-                       "JOIN sale_order sale ON line.order_id = sale.id " \
-                       "WHERE sale.state NOT IN ('done', 'cancel') " \
-                       "AND sale.date_expedition = %s AND line.product_id = %s", (date, product,))
-        qty_cmd = cr.fetchone()
+            sale_ids = sale_obj.search(cr, uid, [('date_expedition','=', date)], context=context)
+            line_ids = sale_line_obj.search(cr, uid, [('state','not in',('done', 'cancel')), ('order_id','in', sale_ids), ('product_id','=',product)])
 
-        if qty_cmd[0] is None:
-            return 0
-        else:
-            return qty_cmd[0]
+        qty = 0
+        if line_ids:
+            draft_line_ids = sale_line_obj.search(cr, uid, [('id','in', line_ids), ('state','=', 'draft')], context=context)
+            if draft_line_ids:
+                for line in sale_line_obj.read(cr, uid, draft_line_ids, ['product_uom_qty'], context=context):
+                    qty += line['product_uom_qty']
+            
+            confirm_line_ids = sale_line_obj.search(cr, uid, [('id','in', line_ids), ('state','!=', 'draft')], context=context)
+            proc_line_ids = procurement_obj.search(cr, uid, [('sale_line_id','in',confirm_line_ids)], context=context)
+            if proc_line_ids:                
+                for line_id in proc_line_ids:
+                    proc_line = procurement_obj.browse(cr, uid, line_id, context=context)
+                    deliv_line_ids = stock_move_obj.search(cr, uid, [('procurement_id','=',line_id)], context=context)
+                    product_qty = proc_line.sale_line_id.product_uom_qty
+                    if deliv_line_ids:
+                        for deliv_line in stock_move_obj.read(cr, uid, deliv_line_ids, ['product_uom_qty', 'state'], context=context):
+                            if deliv_line['state'] == 'done':
+                                product_qty -= deliv_line['product_uom_qty']
+                            else:
+                                continue
+                    qty += product_qty
+        return qty
 
     #Retourner la quantité des produits non fabriqués
     def sum_qty_of(self, cr, uid, lst_mrp, context=None):
