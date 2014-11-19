@@ -10,9 +10,8 @@ MRP pour le secteur automobile
     'author': 'Tony GALMICHE / Asma BOUSSELMI',
     'maintainer': 'InfoSaône',
     'website': 'http://www.infosaone.com',
-    'depends': ['product','mrp', 'mrp_byproduct', 'is_automobile_contract'],
+    'depends': ['product','mrp', 'mrp_byproduct', 'is_automobile_contract', 'is_pg_product'],
     'data': [
-        'product_view.xml',
         'mrp_view.xml',
         'wizard/generate_previsions_view.xml',
         'mrp_sequence.xml',

@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import product
 import mrp
 import wizard
 
