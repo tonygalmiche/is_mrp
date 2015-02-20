@@ -284,10 +284,11 @@ class mrp_generate_previsions(osv.osv_memory):
     #Calculer la date debut de la prevision
     def calcul_date_prevision(self, cr, uid, date, quantity, product, type, company, context=None):
         time_production = quantity * product.temps_realisation
-        start_date = datetime.datetime.strptime(date, '%Y-%m-%d') - datetime.timedelta(days=product.delai_fabrication) - datetime.timedelta(seconds=time_production)
+        delai = product.produce_delay + product.delai_cq
+        start_date = datetime.datetime.strptime(date, '%Y-%m-%d') - datetime.timedelta(days=delai) - datetime.timedelta(seconds=time_production)
         start_time = start_date.strftime('%H:%M:%S')
         if start_time > '01:00:00':
-            start_date = datetime.datetime.strptime(date, '%Y-%m-%d') - datetime.timedelta(days=(product.delai_fabrication + 1)) - datetime.timedelta(seconds=time_production)
+            start_date = datetime.datetime.strptime(date, '%Y-%m-%d') - datetime.timedelta(days=(delai + 1)) - datetime.timedelta(seconds=time_production)
         start_date = start_date.strftime('%Y-%m-%d')
         
         partner = False
